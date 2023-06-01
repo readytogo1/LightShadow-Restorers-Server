@@ -35,7 +35,7 @@ router.post('/upload', upload.single('image'), (req, res) => {
   // 检查文件类型
   const allowedFileTypes = ['.png', '.jpg', '.jpeg'];
   const imageFile = req.file;
-
+  const {"0":param1,"1":param2,"2":param3} = req.query
   if (!imageFile) {
     res.status(400).send('未上传图片文件');
     return;
@@ -49,52 +49,83 @@ router.post('/upload', upload.single('image'), (req, res) => {
 
   // 生成一个唯一的文件名，可以使用 shortid 或其他方式生成
   const uniqueFileName = generateUniqueFileName(imageFile.originalname);
+  const uniqueFileName2 = generateUniqueFileName(imageFile.originalname);
+  const inputPath_f = path.join(__dirname, '../public/input/', uniqueFileName)
+  const outputPath_f = path.join(__dirname, '../public/output/', uniqueFileName2)
+  
 
   // 将图片文件保存到服务器端
   fs.rename(imageFile.path, path.join(__dirname, '../public/input/', uniqueFileName), (err) => {
     if (err) {
       console.error(err);
       res.status(500).send('图片上传失败');
-    } else {
-      /* res.send('图片上传成功'); */
-       // 构造 Python 程序的命令和参数
-      const pythonScript = path.join(__dirname,'../../python/enhance.py');
-      const pythonArgs = [path.join(__dirname, '../public/input/', uniqueFileName)];
-
-      // 调用 Python 程序
-      const pythonProcess = spawn('python', [pythonScript, ...pythonArgs]);
-
-      let pythonResult = ''; // 用于存储 Python 程序的输出结果
-
-      pythonProcess.stdout.on('data', (data) => {
-        // 处理 Python 程序的输出
-        const result = data.toString();
-
-        // 在此处可以根据需要处理 Python 程序的输出
-        pythonResult += result;
-      });
-
-      pythonProcess.stderr.on('data', (data) => {
-        // 处理 Python 程序的错误输出
-        console.error(data.toString());
-        res.status(500).send('Python 程序执行出错');
-        return
-      });
-
-      // 处理 Python 程序的关闭事件
-      pythonProcess.on('close', (code) => {
-        if (code === 0) {
-          // Python 程序执行成功，处理完成的图像文件路径为：
-          // const processedImagePath = path.join(__dirname, '../../uploads/', uniqueFileName);
-          
+    } else{
+      // 进行去雾操作
+      if(param1 === '1'){
+        // 构造 Python 程序的命令和参数
+       const pythonScript = path.join(__dirname,'../../python/enhance.py');
+       const pythonArgs = [inputPath_f,outputPath_f];
+ 
+       // 调用 Python 程序
+       const pythonProcess = spawn('python', [pythonScript, ...pythonArgs]);
+ 
+       pythonProcess.stderr.on('data', (data) => {
+         // 处理 Python 程序的错误输出
+         console.error(data.toString());
+         res.status(500).send('Python 程序执行出错');
+         return
+       });
+ 
+       // 处理 Python 程序的关闭事件
+       pythonProcess.on('close', (code) => {
+         if (code != 0) {
+           res.status(500).send('Python 程序执行出错');
+           return 
+         }else if(param2 === '0' && param3 === '0'){
           // 将处理后的图像文件返回给客户端
-          inputPath = 'http://localhost:3000/input/' + uniqueFileName
-          outputPath = 'http://localhost:3000/output/' + pythonResult
+          let inputPath = 'http://localhost:3000/input/' + uniqueFileName
+          let outputPath = 'http://localhost:3000/output/' + uniqueFileName2
           res.send([inputPath,outputPath]);
-        } else {
-          res.status(500).send('Python 程序执行出错');
+         }
+       });
+      }
+      if(param3 != '0'){
+        let pythonProcess2 = null; // 声明 pythonProcess 变量并初始化为 null
+        let pythonFilePath = '../color/color/colorization/eccv16_f.py'
+        if(param3 === '2') pythonFilePath = '../color/color/colorization/siggraph17_f.py'
+        if(param1 != '0' || param2 != '0'){
+          pythonProcess2 = spawn('conda', 
+            ['run', '-n', 'color', 'python', pythonFilePath , 
+            '-i', outputPath_f, '-o', outputPath_f]);
+              console.log(outputPath_f,outputPath_f);
+        }else{
+          // 传递参数 输入文件路径和输出文件路径
+          pythonProcess2 = spawn('conda', 
+          ['run', '-n', 'color', 'python', pythonFilePath, 
+            '-i', inputPath_f, '-o', outputPath_f]);
+          console.log(inputPath_f,outputPath_f);
         }
-      });
+
+        // 调用 Python 脚本
+        pythonProcess2.stdout.on('data', (data) => {
+          console.log(`stdout: ${data}`);
+        });
+
+        pythonProcess2.stderr.on('data', (data) => {
+          console.error(`stderr: ${data}`);
+        });
+        // 处理 Python 程序的关闭事件
+        pythonProcess2.on('close', (code) => {
+          if (code != 0) {
+            res.status(500).send('Python 程序执行出错');
+            return 
+          }else{
+            let inputPath = 'http://localhost:3000/input/' + uniqueFileName
+            let outputPath = 'http://localhost:3000/output/' + uniqueFileName2
+            res.send([inputPath,outputPath]);
+          }
+        });
+      }
     }
   });
 });
